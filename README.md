@@ -14,12 +14,15 @@ One pre-LN transformer block, ~57k parameters:
 - character embeddings + learned positional embeddings
 - 2-head causal self-attention (d = 64, head dim 32, context 64)
 - GELU MLP (hidden 256), residual connections, three layer norms
-- untied unembedding, cross-entropy over all positions
+- untied unembedding, cross-entropy over all 64 positions (each window is
+  65 tokens, so the last position has a target too — it is the one the
+  sampler reads)
 
 The backward pass is exact: softmax-attention backprop through the causal
 mask, layer-norm gradients, GELU derivative (tanh approximation), the lot.
-Training parallelizes over the batch with per-thread gradient buffers reduced
-before the Adam step.
+Training parallelizes over the batch: a persistent worker pool with one
+gradient buffer and one activation set per thread, reduced before the Adam
+step. A training step allocates nothing.
 
 ## Visualization
 
@@ -31,13 +34,18 @@ regions); and text sampled from the model every ~80 steps.
 
 Ships with a small built-in corpus (original text, deliberately plain and
 repetitive so a char model learns fast) and a "Load text file"
-button to train on anything else.
+button to train on anything else. Steps/frame 0 pauses training.
 
-## Verified
+## Layout
 
-`TRANS_TEST=N` runs N optimizer steps headlessly and prints the loss
-trajectory: from ln(26) ≈ 3.26 at init to < 0.9 within 250 steps at batch 8 on
-the built-in corpus, with word-like fragments in the samples.
+```
+src/Corpus.h       built-in training text
+src/Model.*        parameters, activations, forward, backward, Adam, sampling (no Qt)
+src/Trainer.*      batches, worker pool, gradient reduction, statistics (no Qt)
+src/Canvas.*       the four panels
+src/MainWindow.*   parameter panel and the training timer
+src/main.cpp       application entry point
+```
 
 ## Build
 
@@ -46,8 +54,8 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-Requires Qt6. C++17, Qt6 Widgets only. `DUMP_FRAMES=N` saves a screenshot of
-the visualization headlessly.
+Requires Qt6 and a C++23 compiler (MSVC 2022+, GCC 13+, Clang 16+). Qt6
+Widgets only.
 
 ## License
 
